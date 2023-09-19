@@ -368,9 +368,7 @@ for key in model.keys():
 
                                 preds = np.around(preds)
 
-                                np.save(
-                                    path + key + "Preds_merge" + str(t) + ".npy", preds
-                                )
+                                np.save(path + key + f"Preds_merge_{t}.npy", preds)
 
                                 rmse = np.sqrt(
                                     np.average((raw_data[train:] - preds) ** 2)
@@ -384,35 +382,12 @@ for key in model.keys():
                                 gc.collect()
 
                             if Use_Var and var_use != None:
-                                open(path + "Result" + str(t) + ".csv", "a").write(
-                                    key
-                                    + str(var_use).replace(",", "")
-                                    + ","
-                                    + str(np.min(RMSE))
-                                    + ","
-                                    + str(np.min(MAE))
-                                    + ","
-                                    + str(np.average(Running_Time))
-                                    + ","
-                                    + str(t_s)
-                                    + ","
-                                    + str(lr)
-                                    + ","
-                                    + str(b_s)
-                                    + ","
-                                    + str(h_u)
-                                    + "\n"
+                                open(path + f"Result_{t}.csv", "a").write(
+                                    f"{key} {(var_use).replace(',', '')},{np.min(RMSE)},{np.min(MAE)},{np.average(Running_Time)},{t_s},{lr},{b_s},{h_u}\n"
                                 )
                             else:
                                 open(path + "Result" + str(t) + ".csv", "a").write(
-                                    key
-                                    + ","
-                                    + str(np.average(RMSE))
-                                    + ","
-                                    + str(np.average(MAE))
-                                    + ","
-                                    + str(np.average(Running_Time))
-                                    + "\n"
+                                    f"{key},{np.average(RMSE)},{np.average(MAE)},{np.average(Running_Time)}\n"
                                 )
 
                 del X_train, y_train, X_test, y_test
