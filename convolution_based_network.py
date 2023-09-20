@@ -237,166 +237,173 @@ Use_Var = 1
 channels = 1
 EPOCH = 200
 
-if Use_Var:
-    # l1 = [0, 1, 2, 3]
-    # vars_list = []
-    # for i in range(1, len(l1) + 1):
-    #     iter = itertools.combinations(l1, i)
-    #     vars_list += list(iter)
-    # vars_list = [(0,), (1,), (2,), (3,), (0, 1, 2, 3)]
-    vars_list = [(0, 2, 3)]
-else:
-    vars_list = [1]
+if __name__ == "__main__":
+    if Use_Var:
+        # l1 = [0, 1, 2, 3]
+        # vars_list = []
+        # for i in range(1, len(l1) + 1):
+        #     iter = itertools.combinations(l1, i)
+        #     vars_list += list(iter)
+        # vars_list = [(0,), (1,), (2,), (3,), (0, 1, 2, 3)]
+        vars_list = [(0, 2, 3)]
+    else:
+        vars_list = [1]
 
-# 'ConvLSTM': model_conv, 'AttConvLSTM': model_attconv,'GCLSTM': model_gc,'AttGCLSTM': model_attgc,  'SeqAttGCLSTM': model_seqattgc,'SeqGCLSTM': model_seqgc
-model = {"AttGCLSTM": model_attgc}
+    # 'ConvLSTM': model_conv, 'AttConvLSTM': model_attconv,'GCLSTM': model_gc,'AttGCLSTM': model_attgc,  'SeqAttGCLSTM': model_seqattgc,'SeqGCLSTM': model_seqgc
+    model = {"AttGCLSTM": model_attgc}
 
-for key in model.keys():
-    print(key)
-    var_list = vars_list
-    for var_use in var_list:
-        times = [60]  # 10, 15, 20, 30, 60
-        for t in times:
-            print("time interval:", t)
-            path = "Docked_" + str(t) + "/"
-            time_inter = int(24 * 60 / t)
-            train = time_inter * 16
-            test = time_inter * 5
+    for key in model.keys():
+        print(key)
+        var_list = vars_list
+        for var_use in var_list:
+            times = [60]  # 10, 15, 20, 30, 60
+            for t in times:
+                print("time interval:", t)
+                path = "Docked_" + str(t) + "/"
+                time_inter = int(24 * 60 / t)
+                train = time_inter * 16
+                test = time_inter * 5
 
-            raw_data = np.load(path + "Docked_Station_adj_weight" + str(t) + ".npy")
-            n_station = raw_data.shape[1]
-            raw_data_x = np.sum(raw_data, axis=1).reshape(-1, n_station, 1)
-            raw_data_y = np.sum(raw_data, axis=2).reshape(-1, n_station, 1)
-            raw_data = np.concatenate((raw_data_x, raw_data_y), axis=2)
-            del raw_data_x, raw_data_y
-            gc.collect()
-            n_feature = raw_data.shape[-1]
-
-            raw_data_sqrt = np.sqrt(raw_data)
-
-            diff_normal = difference(raw_data_sqrt, 1)
-            diff_season = difference(diff_normal, time_inter)
-            diff_season = diff_season.reshape((-1, n_station * n_feature))
-
-            scaler = MinMaxScaler(feature_range=(0, 1))
-            diff_season = scaler.fit_transform(diff_season)
-
-            diff_season = diff_season.reshape(-1, n_station, n_feature, 1)
-
-            seq_train = diff_season[:train]
-            seq_test = diff_season[train:]
-
-            for t_s in [i for i in range(2, 7)]:
-                time_step = int(t_s * 60 / t)
-
-                X_train, y_train = seq_to_training_data(seq_train, time_step)
-                X_test, y_test = seq_to_training_data(seq_test, time_step)
-
-                if Use_Var and var_use != None:
-                    if len(var_use) == 1:
-                        Vars = Generate_Var(t, n_station, train + test)[var_use[0]]
-                    else:
-                        Vars = Generate_Var(t, n_station, train + test)
-                        Vars_tem = Vars[var_use[0]]
-                        for j in var_use[1:]:
-                            Vars_tem = np.concatenate((Vars_tem, Vars[j]), axis=2)
-                        Vars = Vars_tem
-                        del Vars_tem
-                        gc.collect()
-
-                    dense1 = Dense(50)
-                    dense2 = Dense(15)
-                    dense3 = Dense(1)
-                    Vars = dense3(Vars)
-                    Vars = np.array(Vars)
-
-                    var_shape = Vars.shape[2]
-
-                    Vars = Vars.reshape((-1, n_station * var_shape))
-
-                    scaler_var = MinMaxScaler(feature_range=(0, 1))
-                    Vars = scaler_var.fit_transform(Vars)
-
-                    Vars = Vars.reshape(-1, n_station, var_shape, 1)
-
-                    var_train = Vars[:train]
-                    var_test = Vars[train:]
-
-                    X_var_train, _ = seq_to_training_data(var_train, time_step)
-                    X_var_test, _ = seq_to_training_data(var_test, time_step)
-
-                    X_train = np.concatenate((X_train, X_var_train), axis=3)
-                    X_test = np.concatenate((X_test, X_var_test), axis=3)
-                else:
-                    var_shape = 0
-
-                for lr in [i / 1000 for i in range(5, 11)]:
-                    LEARNING_RATE = lr
-                    for b_s in [32, 64, 128]:
-                        if lr == 0.005 and b_s <= 128:
-                            continue
-                        BATCH_SIZE = b_s
-                        for h_u in [32, 64, 128, 256]:
-                            if lr == 0.005 and b_s <= 128 and h_u <= 64:  #
-                                continue
-                            HIDDEN_UNIT = h_u
-                            RMSE = []
-                            MAE = []
-                            Running_Time = []
-                            for j in range(100):
-                                t0 = time.process_time()
-                                preds = model[key](
-                                    time_step, n_station, n_feature, var_shape, channels
-                                )
-                                total_running_time = time.process_time() - t0
-
-                                preds = scaler.inverse_transform(
-                                    preds.reshape(-1, n_station * n_feature)
-                                )
-                                preds = preds.reshape((-1, n_station, n_feature))
-
-                                preds = inverse_difference(
-                                    diff_normal[train:], preds, time_inter
-                                )
-                                preds = inverse_difference(raw_data[train:], preds, 1)
-
-                                preds[preds < 0] = 0
-
-                                k = preds[0]
-                                preds[:-1] = preds[1:]
-                                preds[-1] = k
-
-                                preds = np.around(preds)
-
-                                np.save(path + key + f"Preds_merge_{t}.npy", preds)
-
-                                rmse = np.sqrt(
-                                    np.average((raw_data[train:] - preds) ** 2)
-                                )
-                                mae = np.average(np.abs(raw_data[train:] - preds))
-                                RMSE.append(rmse)
-                                MAE.append(mae)
-                                Running_Time.append(total_running_time)
-
-                                del preds, k
-                                gc.collect()
-
-                            if Use_Var and var_use != None:
-                                open(path + f"Result_{t}.csv", "a").write(
-                                    f"{key} {(var_use).replace(',', '')},{np.min(RMSE)},{np.min(MAE)},{np.average(Running_Time)},{t_s},{lr},{b_s},{h_u}\n"
-                                )
-                            else:
-                                open(path + "Result" + str(t) + ".csv", "a").write(
-                                    f"{key},{np.average(RMSE)},{np.average(MAE)},{np.average(Running_Time)}\n"
-                                )
-
-                del X_train, y_train, X_test, y_test
-                if Use_Var and var_use != None:
-                    del var_train, var_test
-                    del X_var_train, X_var_test
+                raw_data = np.load(path + "Docked_Station_adj_weight" + str(t) + ".npy")
+                n_station = raw_data.shape[1]
+                raw_data_x = np.sum(raw_data, axis=1).reshape(-1, n_station, 1)
+                raw_data_y = np.sum(raw_data, axis=2).reshape(-1, n_station, 1)
+                raw_data = np.concatenate((raw_data_x, raw_data_y), axis=2)
+                del raw_data_x, raw_data_y
                 gc.collect()
+                n_feature = raw_data.shape[-1]
 
-            del raw_data, raw_data_sqrt
-            del diff_normal, diff_season
-            del seq_train, seq_test, scaler
-            gc.collect()
+                raw_data_sqrt = np.sqrt(raw_data)
+
+                diff_normal = difference(raw_data_sqrt, 1)
+                diff_season = difference(diff_normal, time_inter)
+                diff_season = diff_season.reshape((-1, n_station * n_feature))
+
+                scaler = MinMaxScaler(feature_range=(0, 1))
+                diff_season = scaler.fit_transform(diff_season)
+
+                diff_season = diff_season.reshape(-1, n_station, n_feature, 1)
+
+                seq_train = diff_season[:train]
+                seq_test = diff_season[train:]
+
+                for t_s in [i for i in range(2, 7)]:
+                    time_step = int(t_s * 60 / t)
+
+                    X_train, y_train = seq_to_training_data(seq_train, time_step)
+                    X_test, y_test = seq_to_training_data(seq_test, time_step)
+
+                    if Use_Var and var_use != None:
+                        if len(var_use) == 1:
+                            Vars = Generate_Var(t, n_station, train + test)[var_use[0]]
+                        else:
+                            Vars = Generate_Var(t, n_station, train + test)
+                            Vars_tem = Vars[var_use[0]]
+                            for j in var_use[1:]:
+                                Vars_tem = np.concatenate((Vars_tem, Vars[j]), axis=2)
+                            Vars = Vars_tem
+                            del Vars_tem
+                            gc.collect()
+
+                        dense1 = Dense(50)
+                        dense2 = Dense(15)
+                        dense3 = Dense(1)
+                        Vars = dense3(Vars)
+                        Vars = np.array(Vars)
+
+                        var_shape = Vars.shape[2]
+
+                        Vars = Vars.reshape((-1, n_station * var_shape))
+
+                        scaler_var = MinMaxScaler(feature_range=(0, 1))
+                        Vars = scaler_var.fit_transform(Vars)
+
+                        Vars = Vars.reshape(-1, n_station, var_shape, 1)
+
+                        var_train = Vars[:train]
+                        var_test = Vars[train:]
+
+                        X_var_train, _ = seq_to_training_data(var_train, time_step)
+                        X_var_test, _ = seq_to_training_data(var_test, time_step)
+
+                        X_train = np.concatenate((X_train, X_var_train), axis=3)
+                        X_test = np.concatenate((X_test, X_var_test), axis=3)
+                    else:
+                        var_shape = 0
+
+                    for lr in [i / 1000 for i in range(5, 11)]:
+                        LEARNING_RATE = lr
+                        for b_s in [32, 64, 128]:
+                            if lr == 0.005 and b_s <= 128:
+                                continue
+                            BATCH_SIZE = b_s
+                            for h_u in [32, 64, 128, 256]:
+                                if lr == 0.005 and b_s <= 128 and h_u <= 64:  #
+                                    continue
+                                HIDDEN_UNIT = h_u
+                                RMSE = []
+                                MAE = []
+                                Running_Time = []
+                                for j in range(100):
+                                    t0 = time.process_time()
+                                    preds = model[key](
+                                        time_step,
+                                        n_station,
+                                        n_feature,
+                                        var_shape,
+                                        channels,
+                                    )
+                                    total_running_time = time.process_time() - t0
+
+                                    preds = scaler.inverse_transform(
+                                        preds.reshape(-1, n_station * n_feature)
+                                    )
+                                    preds = preds.reshape((-1, n_station, n_feature))
+
+                                    preds = inverse_difference(
+                                        diff_normal[train:], preds, time_inter
+                                    )
+                                    preds = inverse_difference(
+                                        raw_data[train:], preds, 1
+                                    )
+
+                                    preds[preds < 0] = 0
+
+                                    k = preds[0]
+                                    preds[:-1] = preds[1:]
+                                    preds[-1] = k
+
+                                    preds = np.around(preds)
+
+                                    np.save(path + key + f"Preds_merge_{t}.npy", preds)
+
+                                    rmse = np.sqrt(
+                                        np.average((raw_data[train:] - preds) ** 2)
+                                    )
+                                    mae = np.average(np.abs(raw_data[train:] - preds))
+                                    RMSE.append(rmse)
+                                    MAE.append(mae)
+                                    Running_Time.append(total_running_time)
+
+                                    del preds, k
+                                    gc.collect()
+
+                                if Use_Var and var_use != None:
+                                    open(path + f"Result_{t}.csv", "a").write(
+                                        f"{key} {(var_use).replace(',', '')},{np.min(RMSE)},{np.min(MAE)},{np.average(Running_Time)},{t_s},{lr},{b_s},{h_u}\n"
+                                    )
+                                else:
+                                    open(path + "Result" + str(t) + ".csv", "a").write(
+                                        f"{key},{np.average(RMSE)},{np.average(MAE)},{np.average(Running_Time)}\n"
+                                    )
+
+                    del X_train, y_train, X_test, y_test
+                    if Use_Var and var_use != None:
+                        del var_train, var_test
+                        del X_var_train, X_var_test
+                    gc.collect()
+
+                del raw_data, raw_data_sqrt
+                del diff_normal, diff_season
+                del seq_train, seq_test, scaler
+                gc.collect()
